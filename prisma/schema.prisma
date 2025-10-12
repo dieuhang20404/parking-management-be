@@ -1,0 +1,36 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://neondb_owner:npg_Klpqo0A6VcQM@ep-misty-river-aduw1rxp-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+}
+
+model ParkingLot {
+  id        Int      @id @default(autoincrement())
+  sensorId  Int      @unique
+  status    Int      @default(0) // 0 - Trống, 1 - Đã đỗ, 2 - Đang chờ
+
+  // Liên kết với các vé đang/đã sử dụng chỗ này
+  tickets   Ticket[]
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model Ticket {
+  id          Int       @id @default(autoincrement())
+  plateNumber String
+  timeIn      DateTime  @default(now())
+  timeOut     DateTime?
+  MAC         String?
+  qrCode      String?
+  
+  // Liên kết đến bãi đỗ tương ứng
+  parkingLotId Int
+  parkingLot   ParkingLot @relation(fields: [parkingLotId], references: [id])
+
+  createdAt DateTime @default(now())
+}
