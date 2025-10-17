@@ -1,2 +1,5 @@
-# Ignore environment variables
+/node_modules
 .env
+/prisma/seed.ts
+/dist
+/src/generated/prisma
