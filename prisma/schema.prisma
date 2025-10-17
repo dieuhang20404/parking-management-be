@@ -1,0 +1,26 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ParkingLot {
+  id       Int      @id @default(autoincrement())
+  sensorId Int      @unique
+  status   Int      @default(0)
+  tickets  Ticket[]
+}
+
+model Ticket {
+  id           Int        @id @default(autoincrement())
+  plateNumber  String
+  timeIn       DateTime
+  timeOut      DateTime?
+  MAC          String?
+  qrCode       String?
+  parkingLotId Int
+  parkingLot   ParkingLot @relation(fields: [parkingLotId], references: [id])
+}
