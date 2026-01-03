@@ -21,7 +21,6 @@ app.use(express.urlencoded({extended: true}));
 initWebRoute(app);
 initSocketRoute(io);
 
-
 server.listen(port, () => {
     console.log("Backend is running on the port: " + port);
 })
