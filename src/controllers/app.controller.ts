@@ -4,6 +4,7 @@ import { ReturnData } from "../configs/interface";
 import * as service from "../services/app.service";
 import { v1 as uuidv1 } from "uuid"; 
 import { redis } from "../configs/redis";
+import { getSocketIO } from '../configs/socket';
 
 const controllerError: ReturnData = {
     message: "Xảy ra lỗi ở controller",
@@ -134,7 +135,50 @@ export const getEmptyPositionController = async (req: Request, res: Response): P
         if (!admin || admin == "") {
             return res.status(200).json(dataError);
         }
+        const adminAuth = await redis.get("admin")
+        if (admin != adminAuth) {
+            return res.status(200).json(dataError);
+        }
         const result = await service.getEmptyPositionService();
+        return res.status(200).json(result);
+    } catch(e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
+export const getHistoryController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const admin: string = getUuid(req)[1];
+        if (!admin || admin == "") {
+            return res.status(200).json(dataError);
+        }
+        const adminAuth = await redis.get("admin")
+        if (admin != adminAuth) {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.getHistoryService();
+        return res.status(200).json(result);
+    } catch(e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
+
+export const createTicketTestController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const uuid: string = getUuid(req)[0];
+        if (!uuid || uuid == "") {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.createTicketTestService(uuid);
+
+        if (result.code == 0) {
+            const io = getSocketIO();
+            io.emit("ticket:create", result.data);
+        }
+        
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);

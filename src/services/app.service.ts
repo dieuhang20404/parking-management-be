@@ -74,6 +74,8 @@ export const createTicketService = async (uuid: string): Promise<ReturnData> => 
     try {
         // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
 
+        // Update trạng thái chỗ đó (Update từ đây hoặc từ cảm biến gửi về)
+
         // Hiện map chỉ đường
 
         return serviceError;
@@ -85,6 +87,14 @@ export const createTicketService = async (uuid: string): Promise<ReturnData> => 
 
 export const sendOtpService = async (): Promise<ReturnData> => {
     try {
+        const existAdmin = await redis.get("admin");
+        if (existAdmin) {
+            return({
+                message: "Tài khoản admin đang đăng nhập ở máy khác",
+                data: false,
+                code: 1
+            })
+        }
         const existOtp = await redis.get("otp");
         if (existOtp) {
             console.log(existOtp);
@@ -168,6 +178,72 @@ export const getEmptyPositionService = async (): Promise<ReturnData> => {
             data: positionId,
             code: 0
         })
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
+
+export const getHistoryService = async (): Promise<ReturnData> => {
+    try {
+        const history = await prisma.ticket.findMany({
+            select: {
+                id: true,
+                plateNumber: true,
+                timeIn: true,
+                timeOut: true,
+                parkingLotId: true,
+                imageIn: true,
+                imageOut: true
+            }
+        })
+        return({
+            message: "Thành công",
+            data: history,
+            code: 0
+        });
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
+
+export const checkoutService = async (qrCode: string): Promise<ReturnData> => {
+    try {
+        return serviceError;
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
+
+export const createTicketTestService = async (uuid: string): Promise<ReturnData> => {
+    try {
+        const now = new Date();
+        const ticket = await prisma.ticket.create({
+            data: {
+                plateNumber: "59-XA-02299",
+                timeIn: now,
+                uuid: uuid,
+                qrCode: "https://res.cloudinary.com/dibigdhgr/image/upload/v1767441127/frame_bqbjhk.png",
+                imageIn: "https://res.cloudinary.com/dibigdhgr/image/upload/v1767441127/frame_bqbjhk.png",
+                parkingLotId: 1
+            }
+        })
+
+        return({
+            message: "Thêm thành công",
+            data: {
+                id: ticket.id,
+                plateNumber: ticket.plateNumber,
+                timeIn: ticket.timeIn,
+                timeOut: null,
+                uuid: ticket.uuid,
+                qrCode: ticket.qrCode,
+                parkingLotId: ticket.parkingLotId
+            },
+            code: 0
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
