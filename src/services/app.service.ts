@@ -162,7 +162,7 @@ export const getEmptyPositionService = async (): Promise<ReturnData> => {
                 id: true
             }
         })
-        const positionId = position.map((item) => (item.id))
+        const positionId = position.map((item: any) => (item.id))
         return({
             message: "Thành công",
             data: positionId,
