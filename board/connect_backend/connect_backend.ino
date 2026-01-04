@@ -2,10 +2,10 @@
 #include "esp_camera.h"
 #include "base64.h"
 
-const char* ssid = "Aaaaa";
-const char* password = "64400000";
+const char* ssid = "Bamos Coffee";
+const char* password = "bamosxinchao";
 
-const char* backend_host = "10.138.174.88"; // IP backend
+const char* backend_host = "172.16.25.228"; // IP backend
 const int backend_port = 4000;
 
 WiFiClient client;
