@@ -21,6 +21,8 @@ model Ticket {
   timeOut      DateTime?
   uuid         String?
   qrCode       String?
+  imageIn      String
+  imageOut     String?
   parkingLotId Int
   parkingLot   ParkingLot @relation(fields: [parkingLotId], references: [id])
 }
