@@ -14,4 +14,16 @@ appRoute.get("/get-empty-position", controller.getEmptyPositionController);
 appRoute.get("/get-history", controller.getHistoryController);
 appRoute.get("/create-ticket-test", controller.createTicketTestController);
 
+// Nhận dữ liệu từ esp32 (cảm biến)
+appRoute.post("/esp32/sensor-data", controller.receiveSensorDataController);
+
+// Nhận dữ liệu từ esp32 (hình ảnh)
+appRoute.post("/esp32/image", controller.receiveImageController);
+
+// Gửi tín hiệu điều khiển servo cho esp32
+appRoute.post("/esp32/servo", controller.sendServoSignalController);
+
+// Tạo mã QR từ dữ liệu nhận được
+appRoute.post("/generate-qr", controller.generateQrController);
+
 export default appRoute;
