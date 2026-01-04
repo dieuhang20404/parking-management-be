@@ -185,3 +185,51 @@ export const createTicketTestController = async (req: Request, res: Response): P
         return res.status(500).json(controllerError);
     }
 }
+
+// Nhận dữ liệu cảm biến từ esp32
+export const receiveSensorDataController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const sensorData = req.body;
+        const result = await service.handleSensorDataService(sensorData);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
+// Nhận dữ liệu hình ảnh từ esp32
+export const receiveImageController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const imageData = req.body;
+        const result = await service.handleImageService(imageData);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
+// Tạo mã QR từ dữ liệu nhận được
+export const generateQrController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const qrData = req.body;
+        const result = await service.generateQrService(qrData);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
+// Gửi tín hiệu điều khiển servo cho esp32
+export const sendServoSignalController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { signal } = req.body;
+        const result = await service.sendServoSignalService(signal);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
