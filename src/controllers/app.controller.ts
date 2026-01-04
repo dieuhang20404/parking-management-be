@@ -185,3 +185,23 @@ export const createTicketTestController = async (req: Request, res: Response): P
         return res.status(500).json(controllerError);
     }
 }
+export const getFindPathController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { startPosition } = req.body;
+
+        if (!startPosition) {
+            return res.status(200).json({
+                code: 1,
+                message: "Vui lòng cung cấp vị trí bắt đầu",
+                data: null
+            });
+        }
+
+        const result = await service.getFindPathService(startPosition);
+
+        return res.status(200).json(result);
+    } catch(e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
