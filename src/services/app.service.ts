@@ -248,7 +248,6 @@ export const getFindPathService = async (startPosition?: [number, number]): Prom
     }
 };
 
-
 const manhattanDistance = (pos1: [number, number], pos2: [number, number]): number => {
     return Math.abs(pos1[0] - pos2[0]) + Math.abs(pos1[1] - pos2[1]);
 };

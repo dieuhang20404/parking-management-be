@@ -187,8 +187,12 @@ export const createTicketTestController = async (req: Request, res: Response): P
 }
 export const getFindPathController = async (req: Request, res: Response): Promise<any> => {
     try {
-        const { startPosition } = req.body;
+        const startX = parseInt(req.query.x as string);
+        const startY = parseInt(req.query.y as string);
 
+        const startPosition = (!isNaN(startX) && !isNaN(startY))
+            ? [startX, startY] as [number, number]
+            : undefined;
         if (!startPosition) {
             return res.status(200).json({
                 code: 1,
