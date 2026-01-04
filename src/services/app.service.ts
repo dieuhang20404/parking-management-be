@@ -4,15 +4,13 @@ import { redis } from "../configs/redis";
 import { v1 as uuidv1 } from "uuid"; 
 import QRCode from "qrcode";
 import net from "net";
+import axios from "../configs/axios";
+import FormData from 'form-data';
 
 const serviceError: ReturnData = {
     message: "Xảy ra lỗi ở service",
     data: false,
     code: -1
-}
-
-export const testApiService = () => {
-    return("abcd");
 }
 
 export const getAllTicketService = async (uuid: string): Promise<ReturnData> => {
@@ -44,6 +42,43 @@ export const getAllTicketService = async (uuid: string): Promise<ReturnData> => 
         return serviceError;
     }
 }
+
+export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
+    try {
+        const imageResponse = await axios.get(imgUrl, { responseType: 'arraybuffer' });
+        const imageBuffer = Buffer.from(imageResponse.data);
+        const form = new FormData();
+        form.append('file', imageBuffer, { 
+            filename: 'capture.jpg',
+            contentType: imageResponse.headers['content-type'] || 'image/jpeg',
+        });
+
+        const aiUrl = process.env.FASTAPI_URL;
+        if (!aiUrl) {
+            return({
+                message: "Không tìm thấy AI_URL",
+                data: null,
+                code: 1
+            })
+        }
+
+        const response = await axios.post(aiUrl, form, {
+            headers: {
+                ...form.getHeaders(),
+            },
+            timeout: 15000,
+        });
+
+        return({
+            message: "Detect Success",
+            data: response.data.plates.plate,
+            code: 0
+        })
+    } catch (e) {
+        console.log(e);
+        return serviceError;
+    }
+};
 
 export const getPlateNumberService = async (): Promise<ReturnData> => {
     try {
