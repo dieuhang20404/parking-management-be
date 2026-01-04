@@ -63,7 +63,11 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
             })
         }
 
-        // Lấy biển số xe
+        // Chụp ảnh biển số (Esp)
+
+        // Nhận ảnh tải lên cloudinary
+
+        // Gửi cho fastapi detect biển số
 
         return serviceError;
     } catch(e) {
