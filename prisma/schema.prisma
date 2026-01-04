@@ -9,7 +9,7 @@ datasource db {
 
 model ParkingLot {
   id       Int      @id @default(autoincrement())
-  sensorId Int      @unique
+  sensorId Int?     @unique
   status   Int      @default(0)
   tickets  Ticket[]
 }
@@ -19,7 +19,7 @@ model Ticket {
   plateNumber  String
   timeIn       DateTime
   timeOut      DateTime?
-  MAC          String?
+  uuid         String?
   qrCode       String?
   parkingLotId Int
   parkingLot   ParkingLot @relation(fields: [parkingLotId], references: [id])
