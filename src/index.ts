@@ -6,6 +6,7 @@ import { Server } from "socket.io";
 import http from "http";
 import initSocketRoute from "./socket/socket.route";
 import { setSocketIO } from "./configs/socket";
+import { connectToEsp32 } from "./configs/esp32";
 
 dotenv.config();
 
@@ -22,6 +23,8 @@ app.use(express.urlencoded({extended: true}));
 
 initWebRoute(app);
 initSocketRoute(io);
+
+connectToEsp32();
 
 server.listen(port, () => {
     console.log("Backend is running on the port: " + port);

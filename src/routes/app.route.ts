@@ -4,15 +4,15 @@ import {getFindPathService} from "../services/app.service";
 
 let appRoute = express.Router();
 
-appRoute.get("/test-api", controller.testApiController);
 appRoute.get("/reload-page", controller.reloadPageController);
 appRoute.get("/get-all-ticket", controller.getAllTicketController);
 appRoute.get("/get-plate-number", controller.getPlateNumberController);
-appRoute.get("/create-ticket", controller.createTicketController);
+appRoute.post("/create-ticket", controller.createTicketController);
 appRoute.get("/send-otp", controller.sendOtpController);
 appRoute.post("/check-otp", controller.checkOtpController);
 appRoute.get("/get-empty-position", controller.getEmptyPositionController);
 appRoute.get("/get-history", controller.getHistoryController);
+appRoute.post("/checkout", controller.checkoutController);
 appRoute.get("/create-ticket-test", controller.createTicketTestController);
 // appRoute.get("/get-find-path", async (req, res) => {
 //     const startX = parseInt(req.query.x as string) || 0;

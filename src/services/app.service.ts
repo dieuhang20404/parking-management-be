@@ -1,19 +1,21 @@
 import { sendEmail } from "../configs/email";
 import { prisma, ReturnData } from "../configs/interface";
 import { redis } from "../configs/redis";
-import { v1 as uuidv1 } from "uuid";
 import { spawn } from 'child_process';
 import path from 'path';
 
+import { v1 as uuidv1 } from "uuid"; 
+import QRCode from "qrcode";
+import net from "net";
+import axios from "../configs/axios";
+import FormData from 'form-data';
+import { captureImage, openServo } from "../configs/esp32";
+import { uploadBufferToCloudinary } from "../configs/cloudinary";
 
-const serviceError: ReturnData = {
+export const serviceError: ReturnData = {
     message: "Xảy ra lỗi ở service",
     data: false,
     code: -1
-}
-
-export const testApiService = () => {
-    return("abcd");
 }
 
 export const getAllTicketService = async (uuid: string): Promise<ReturnData> => {
@@ -46,6 +48,51 @@ export const getAllTicketService = async (uuid: string): Promise<ReturnData> => 
     }
 }
 
+export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
+    try {
+        const imageResponse = await axios.get(imgUrl, { responseType: 'arraybuffer' });
+        const imageBuffer = Buffer.from(imageResponse.data);
+        const form = new FormData();
+        form.append('file', imageBuffer, { 
+            filename: 'capture.jpg',
+            contentType: imageResponse.headers['content-type'] || 'image/jpeg',
+        });
+
+        const aiUrl = process.env.FASTAPI_URL;
+        if (!aiUrl) {
+            return({
+                message: "Không tìm thấy AI_URL",
+                data: null,
+                code: 1
+            })
+        }
+
+        const response = await axios.post(aiUrl, form, {
+            headers: {
+                ...form.getHeaders(),
+            },
+            timeout: 15000,
+        });
+
+        if (!response.data.plates) {
+            return({
+                message: "Không tìm thấy phát hiện được biển số",
+                data: null,
+                code: 1
+            })
+        }
+
+        return({
+            message: "Detect Success",
+            data: response.data.plates.plate,
+            code: 0
+        })
+    } catch (e) {
+        console.log(e);
+        return serviceError;
+    }
+};
+
 export const getPlateNumberService = async (): Promise<ReturnData> => {
     try {
         const emptyPosition = await prisma.parkingLot.findMany({
@@ -64,24 +111,81 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
             })
         }
 
-        // Lấy biển số xe
+        const imageResult = await captureImage();
 
-        return serviceError;
+        const detectResult = await callAIService(imageResult);
+
+        if (detectResult.code != 0) {
+            return detectResult;
+        }
+
+        return({
+            data: {
+                imageUrl: imageResult,
+                plateNumber: detectResult
+            },
+            code: 0,
+            message: "Thành công"
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
     }
 }
 
-export const createTicketService = async (uuid: string): Promise<ReturnData> => {
+export const createTicketService = async (uuid: string, plateNumber: string, imageIn: string): Promise<ReturnData> => {
     try {
-        // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
+        const now = new Date();
+        const ticketData = {
+            plateNumber: plateNumber,
+            timeIn: now,
+            uuid: uuid,
+            imageIn: imageIn
+        }
+        const resultGenerate = await generateQrService(ticketData);
+        if (resultGenerate.code != 0) {
+            return({
+                message: "Lỗi khi tạo mã QR Code",
+                data: false,
+                code: 1
+            })
+        }
 
-        // Update trạng thái chỗ đó (Update từ đây hoặc từ cảm biến gửi về)
+        const resultUpload: any = await uploadBufferToCloudinary(resultGenerate.data.qrBuffer);
+
+        // Tìm đỡ chỗ trống nếu không có thuật toán tìm kiếm 
+        const emptyPosition = await getEmptyPositionService();
+
+        if (emptyPosition.code != 0) {
+            return({
+                message: "Bãi xe không còn chỗ trống",
+                data: false,
+                code: 1
+            })
+        }
+        
+        // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
+        const ticket = await prisma.ticket.create({
+            data: {
+                plateNumber: plateNumber,
+                timeIn: now,
+                uuid: uuid,
+                qrCode: resultUpload.url,
+                imageIn: imageIn,
+                parkingLotId: emptyPosition.data[0]
+            }
+        })
+
+        // Gửi request mở servo
+        const resultOpen = await openServo();
 
         // Hiện map chỉ đường
 
-        return serviceError;
+        return({
+            message: "Thành công",
+            data: ticket,
+            code: 0
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
@@ -158,6 +262,28 @@ export const checkOtpService = async (valueConfirm: string): Promise<ReturnData>
             message: "Chính xác",
             code: 0,
             data: uuid
+        })
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
+
+export const getSensorPositionService = async (): Promise<ReturnData> => {
+    try {
+        const parkingLot = await prisma.parkingLot.findMany({
+            where: {
+                sensorId: {not: null}
+            },
+            select: {
+                id: true
+            }
+        })
+        const positionId = parkingLot.map((item: any) => (item.id))
+        return({
+            message: "Thành công",
+            data: positionId,
+            code: 0
         })
     } catch(e) {
         console.log(e);
@@ -277,7 +403,26 @@ export const getHistoryService = async (): Promise<ReturnData> => {
 
 export const checkoutService = async (qrCode: string): Promise<ReturnData> => {
     try {
-        return serviceError;
+        const imageResult = await captureImage();
+        // Giải hình ảnh
+
+        // Cập nhật db
+        const now = new Date();
+        const dataAfter = await prisma.ticket.updateManyAndReturn({
+            where: {
+                qrCode: qrCode
+            },
+            data: {
+                timeOut: now,
+                imageOut: imageResult
+            }
+        })
+        
+        return({
+            message: "Thành công",
+            data: dataAfter,
+            code: 0
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
@@ -403,3 +548,22 @@ const runPythonAstar = (
         });
     });
 };
+export const generateQrService = async (qrData: any): Promise<ReturnData> => {
+    try {
+        const qrString = JSON.stringify(qrData);
+        const qrCodeUrl = await QRCode.toDataURL(qrString);
+        const qrCodeBuffer = await QRCode.toBuffer(qrString);
+        return({
+            message: "Tạo mã QR thành công",
+            data: {
+                qrImage: qrCodeUrl, 
+                qrBuffer: qrCodeBuffer, 
+                ...qrData
+            },
+            code: 0
+        });
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
