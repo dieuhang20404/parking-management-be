@@ -334,15 +334,28 @@ export const getHistoryService = async (): Promise<ReturnData> => {
     }
 }
 
-export const checkoutService = async (): Promise<ReturnData> => {
+export const checkoutService = async (qrCode: string): Promise<ReturnData> => {
     try {
         const imageResult = await captureImage();
         // Giải hình ảnh
-        
-        // Cập nhật db
 
+        // Cập nhật db
+        const now = new Date();
+        const dataAfter = await prisma.ticket.updateManyAndReturn({
+            where: {
+                qrCode: qrCode
+            },
+            data: {
+                timeOut: now,
+                imageOut: imageResult
+            }
+        })
         
-        return serviceError;
+        return({
+            message: "Thành công",
+            data: dataAfter,
+            code: 0
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
