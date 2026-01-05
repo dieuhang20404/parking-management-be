@@ -6,8 +6,10 @@ import QRCode from "qrcode";
 import net from "net";
 import axios from "../configs/axios";
 import FormData from 'form-data';
+import { captureImage, openServo } from "../configs/esp32";
+import { uploadBufferToCloudinary } from "../configs/cloudinary";
 
-const serviceError: ReturnData = {
+export const serviceError: ReturnData = {
     message: "Xảy ra lỗi ở service",
     data: false,
     code: -1
@@ -69,6 +71,14 @@ export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
             timeout: 15000,
         });
 
+        if (!response.data.plates) {
+            return({
+                message: "Không tìm thấy phát hiện được biển số",
+                data: null,
+                code: 1
+            })
+        }
+
         return({
             message: "Detect Success",
             data: response.data.plates.plate,
@@ -98,28 +108,81 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
             })
         }
 
-        // Chụp ảnh biển số (Esp)
+        const imageResult = await captureImage();
 
-        // Nhận ảnh tải lên cloudinary
+        const detectResult = await callAIService(imageResult);
 
-        // Gửi cho fastapi detect biển số
+        if (detectResult.code != 0) {
+            return detectResult;
+        }
 
-        return serviceError;
+        return({
+            data: {
+                imageUrl: imageResult,
+                plateNumber: detectResult
+            },
+            code: 0,
+            message: "Thành công"
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
     }
 }
 
-export const createTicketService = async (uuid: string): Promise<ReturnData> => {
+export const createTicketService = async (uuid: string, plateNumber: string, imageIn: string): Promise<ReturnData> => {
     try {
-        // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
+        const now = new Date();
+        const ticketData = {
+            plateNumber: plateNumber,
+            timeIn: now,
+            uuid: uuid,
+            imageIn: imageIn
+        }
+        const resultGenerate = await generateQrService(ticketData);
+        if (resultGenerate.code != 0) {
+            return({
+                message: "Lỗi khi tạo mã QR Code",
+                data: false,
+                code: 1
+            })
+        }
 
-        // Update trạng thái chỗ đó (Update từ đây hoặc từ cảm biến gửi về)
+        const resultUpload: any = await uploadBufferToCloudinary(resultGenerate.data.qrBuffer);
+
+        // Tìm đỡ chỗ trống nếu không có thuật toán tìm kiếm 
+        const emptyPosition = await getEmptyPositionService();
+
+        if (emptyPosition.code != 0) {
+            return({
+                message: "Bãi xe không còn chỗ trống",
+                data: false,
+                code: 1
+            })
+        }
+        
+        // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
+        const ticket = await prisma.ticket.create({
+            data: {
+                plateNumber: plateNumber,
+                timeIn: now,
+                uuid: uuid,
+                qrCode: resultUpload.url,
+                imageIn: imageIn,
+                parkingLotId: emptyPosition.data[0]
+            }
+        })
+
+        // Gửi request mở servo
+        const resultOpen = await openServo();
 
         // Hiện map chỉ đường
 
-        return serviceError;
+        return({
+            message: "Thành công",
+            data: ticket,
+            code: 0
+        });
     } catch(e) {
         console.log(e);
         return serviceError;
@@ -203,6 +266,28 @@ export const checkOtpService = async (valueConfirm: string): Promise<ReturnData>
     }
 }
 
+export const getSensorPositionService = async (): Promise<ReturnData> => {
+    try {
+        const parkingLot = await prisma.parkingLot.findMany({
+            where: {
+                sensorId: {not: null}
+            },
+            select: {
+                id: true
+            }
+        })
+        const positionId = parkingLot.map((item: any) => (item.id))
+        return({
+            message: "Thành công",
+            data: positionId,
+            code: 0
+        })
+    } catch(e) {
+        console.log(e);
+        return serviceError;
+    }
+}
+
 export const getEmptyPositionService = async (): Promise<ReturnData> => {
     try {
         const position = await prisma.parkingLot.findMany({
@@ -249,8 +334,14 @@ export const getHistoryService = async (): Promise<ReturnData> => {
     }
 }
 
-export const checkoutService = async (qrCode: string): Promise<ReturnData> => {
+export const checkoutService = async (): Promise<ReturnData> => {
     try {
+        const imageResult = await captureImage();
+        // Giải hình ảnh
+        
+        // Cập nhật db
+
+        
         return serviceError;
     } catch(e) {
         console.log(e);
@@ -291,104 +382,22 @@ export const createTicketTestService = async (uuid: string): Promise<ReturnData>
     }
 }
 
-// Xử lý dữ liệu cảm biến từ esp32
-export const handleSensorDataService = async (sensorData: Array<{position: number, status: number}>): Promise<ReturnData> => {
-    try {
-        // Gửi lệnh yêu cầu ESP32 gửi trạng thái cảm biến
-        await sendToEsp32("GET_STATUS");
-        // sensorData là danh sách các object {position, status}
-        // Cập nhật vào DB
-        for (const sensor of sensorData) {
-            await prisma.parkingLot.update({
-                where: { id: sensor.position },
-                data: { status: sensor.status }
-            });
-        }
-        return({
-            message: "Nhận dữ liệu cảm biến thành công",
-            data: sensorData,
-            code: 0
-        });
-    } catch(e) {
-        console.log(e);
-        return serviceError;
-    }
-}
-
-// Xử lý dữ liệu hình ảnh từ esp32
-export const handleImageService = async (imageData: any): Promise<ReturnData> => {
-    try {
-        // Gửi lệnh yêu cầu ESP32 gửi hình ảnh
-        await sendToEsp32("CAPTURE");
-        // imageData: { imageBase64, ... } nhận từ ESP32
-        // Lưu vào DB hoặc cloud nếu cần
-        // await prisma.ticket.update({ where: { id: imageData.ticketId }, data: { imageIn: imageData.imageBase64 } });
-        return({
-            message: "Nhận dữ liệu hình ảnh thành công",
-            data: imageData,
-            code: 0
-        });
-    } catch(e) {
-        console.log(e);
-        return serviceError;
-    }
-}
-
-// Tạo mã QR từ dữ liệu nhận được
 export const generateQrService = async (qrData: any): Promise<ReturnData> => {
     try {
-        // Tạo mã QR từ dữ liệu nhận được
         const qrString = JSON.stringify(qrData);
         const qrCodeUrl = await QRCode.toDataURL(qrString);
-        // Cập nhật vào DB (ví dụ bảng ticket)
-        // await prisma.ticket.update({ where: { id: qrData.ticketId }, data: { qrCode: qrCodeUrl } });
+        const qrCodeBuffer = await QRCode.toBuffer(qrString);
         return({
             message: "Tạo mã QR thành công",
-            data: { qr: qrCodeUrl, ...qrData },
+            data: {
+                qrImage: qrCodeUrl, 
+                qrBuffer: qrCodeBuffer, 
+                ...qrData
+            },
             code: 0
         });
     } catch(e) {
         console.log(e);
         return serviceError;
     }
-}
-
-// Gửi tín hiệu điều khiển servo cho esp32
-export const sendServoSignalService = async (signal: string): Promise<ReturnData> => {
-    try {
-        // signal là số nguyên góc xoay
-        const angle = parseInt(signal);
-        if (isNaN(angle)) {
-            return { message: "Góc servo không hợp lệ", data: false, code: 1 };
-        }
-        // Gửi lệnh tới ESP32
-        const cmd = `SERVO:${angle}`;
-        await sendToEsp32(cmd);
-        return({
-            message: "Gửi tín hiệu servo thành công",
-            data: { angle },
-            code: 0
-        });
-    } catch(e) {
-        console.log(e);
-        return serviceError;
-    }
-}
-
-// Hàm gửi lệnh tới ESP32 qua TCP socket
-async function sendToEsp32(cmd: string): Promise<void> {
-    // Thông tin kết nối ESP32
-    const esp32Host = process.env.ESP32_HOST || "10.138.174.88";
-    const esp32Port = parseInt(process.env.ESP32_PORT || "4000");
-    return new Promise((resolve, reject) => {
-        const client = new net.Socket();
-        client.connect(esp32Port, esp32Host, () => {
-            client.write(cmd + "\n");
-            client.end();
-            resolve();
-        });
-        client.on("error", (err) => {
-            reject(err);
-        });
-    });
 }

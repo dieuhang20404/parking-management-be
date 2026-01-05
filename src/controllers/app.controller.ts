@@ -24,13 +24,6 @@ export const getUuid = (req: Request): string[] => {
     return key ?? [""];
 }
 
-export const testApiController = (req: Request, res: Response) => {
-    const returnValue = service.testApiService();
-    return res.status(200).json({
-        message: returnValue
-    })
-}
-
 export const reloadPageController = async (req: Request, res: Response): Promise<any> => {
     try {
         const authHeader = req.headers["authorization"];
@@ -96,7 +89,15 @@ export const createTicketController = async (req: Request, res: Response): Promi
         if (!uuid || uuid == "") {
             return res.status(200).json(dataError);
         }
-        const result = await service.createTicketService(uuid);
+        const {plateNumber, imageIn} = req.body;
+        if (!plateNumber || !imageIn) {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.createTicketService(uuid, plateNumber, imageIn);
+        if (result.code == 0) {
+            const io = getSocketIO();
+            io.emit("ticket:create", result.data);
+        }
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);
@@ -139,7 +140,7 @@ export const getEmptyPositionController = async (req: Request, res: Response): P
         if (admin != adminAuth) {
             return res.status(200).json(dataError);
         }
-        const result = await service.getEmptyPositionService();
+        const result = await service.getSensorPositionService();
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);
@@ -165,6 +166,20 @@ export const getHistoryController = async (req: Request, res: Response): Promise
     }
 }
 
+export const checkoutController = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const uuid: string = getUuid(req)[0];
+        if (!uuid || uuid == "") {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.checkoutService();
+        return res.status(200).json(result);
+    } catch(e) {
+        console.log(e);
+        return res.status(500).json(controllerError);
+    }
+}
+
 
 export const createTicketTestController = async (req: Request, res: Response): Promise<any> => {
     try {
@@ -181,54 +196,6 @@ export const createTicketTestController = async (req: Request, res: Response): P
         
         return res.status(200).json(result);
     } catch(e) {
-        console.log(e);
-        return res.status(500).json(controllerError);
-    }
-}
-
-// Nhận dữ liệu cảm biến từ esp32
-export const receiveSensorDataController = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const sensorData = req.body;
-        const result = await service.handleSensorDataService(sensorData);
-        return res.status(200).json(result);
-    } catch (e) {
-        console.log(e);
-        return res.status(500).json(controllerError);
-    }
-}
-
-// Nhận dữ liệu hình ảnh từ esp32
-export const receiveImageController = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const imageData = req.body;
-        const result = await service.handleImageService(imageData);
-        return res.status(200).json(result);
-    } catch (e) {
-        console.log(e);
-        return res.status(500).json(controllerError);
-    }
-}
-
-// Tạo mã QR từ dữ liệu nhận được
-export const generateQrController = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const qrData = req.body;
-        const result = await service.generateQrService(qrData);
-        return res.status(200).json(result);
-    } catch (e) {
-        console.log(e);
-        return res.status(500).json(controllerError);
-    }
-}
-
-// Gửi tín hiệu điều khiển servo cho esp32
-export const sendServoSignalController = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const { signal } = req.body;
-        const result = await service.sendServoSignalService(signal);
-        return res.status(200).json(result);
-    } catch (e) {
         console.log(e);
         return res.status(500).json(controllerError);
     }
