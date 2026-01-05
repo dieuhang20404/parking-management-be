@@ -1,111 +1,79 @@
-#include <WiFi.h>
 #include "esp_camera.h"
-#include "base64.h"
+#include <WiFi.h>
+#include <WebSocketsServer.h>
 
-const char* ssid = "Bamos Coffee";
-const char* password = "bamosxinchao";
+// Select camera model
+#define CAMERA_MODEL_AI_THINKER // Has PSRAM
+#include "camera_pins.h"
 
-const char* backend_host = "172.16.25.228"; // IP backend
-const int backend_port = 4000;
+const char* ssid     = "2319RAA4G"; 
+const char* password = "trucha123"; 
 
-WiFiClient client;
 
-#define RXD2 16
-#define TXD2 17
+// Globals
+WebSocketsServer webSocket = WebSocketsServer(5000);
+ 
+void onWebSocketEvent(uint8_t num,
+                      WStype_t type,
+                      uint8_t * payload,
+                      size_t length) {
 
-#define PWDN_GPIO_NUM     32
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM      0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM        5
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
+  switch(type) {
+    case WStype_DISCONNECTED: {
+      Serial.printf("[%u] Disconnected!\n", num);
+      break;
+    } case WStype_CONNECTED: {
+      {
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("[%u] Connection from ", num);
+        Serial.println(ip.toString());
+      }
+      break; 
+    } case WStype_TEXT: {
+      Serial.printf("[%u] Text: %s\n", num, payload);
+      Serial.println((char*)payload);
+
+      String cmd = String((char*)payload).substring(0, length);
+
+      if (cmd == "capture") {
+        Serial.println("Capture Command Received - capturing frame");
+
+        camera_fb_t * fb = NULL;
+        fb = esp_camera_fb_get(); // get image... part of work-around to get latest image
+        esp_camera_fb_return(fb); // return fb... part of work-around to get latest image
+        
+        fb = NULL;
+        fb = esp_camera_fb_get(); // get fresh image
+        size_t fbsize = fb->len;
+        Serial.println(fbsize);
+        Serial.println("Image captured. Returning frame buffer data.");
+        webSocket.sendBIN(num, fb->buf, fbsize);
+        esp_camera_fb_return(fb);
+        Serial.println("Done");
+      } else if (cmd == "servo") {
+        Serial.println("SERVO_90");
+        String response = "SERVO_OK";
+        webSocket.sendTXT(num, response);
+      } else {
+        webSocket.sendTXT(num, payload);
+      }
+      break;
+    } case WStype_BIN:    
+    case WStype_ERROR:
+    case WStype_FRAGMENT_TEXT_START:
+    case WStype_FRAGMENT_BIN_START:
+    case WStype_FRAGMENT:
+    case WStype_FRAGMENT_FIN:
+    default:
+      break;
+  }
+}
 
 void setup() {
-  Serial.begin(115200);
-  Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
+  Serial.begin(9600);
+  Serial.setDebugOutput(false);
+  Serial.println("Connecting...");
 
-  setupCamera();
-  connectWiFi();
-  connectBackend();
-}
-
-void loop() {
-  if (!client.connected()) {
-    connectBackend();
-    delay(1000);
-    return;
-  }
-
-  if (client.available()) {
-    String cmd = client.readStringUntil('\n');
-    cmd.trim();
-    handleCommand(cmd);
-  }
-
-  if (Serial2.available()) {
-    String sensorData = Serial2.readStringUntil('\n');
-    client.println(sensorData);
-  }
-}
-
-void handleCommand(String cmd) {
-  Serial.println("CMD: " + cmd);
-
-  if (cmd == "GET_STATUS") {
-    Serial2.println("STATUS?");
-  }
-  else if (cmd.startsWith("SERVO:")) {
-    Serial2.println("SERVO " + cmd.substring(6));
-  }
-  else if (cmd == "CAPTURE") {
-    captureAndSendImage();
-  }
-}
-
-void captureAndSendImage() {
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    client.println("IMG:ERROR");
-    return;
-  }
-
-  String encoded = base64::encode(fb->buf, fb->len);
-  client.print("IMG:");
-  client.println(encoded);
-
-  esp_camera_fb_return(fb);
-}
-
-void connectWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-  Serial.println(WiFi.localIP());
-}
-
-void connectBackend() {
-  if (client.connect(backend_host, backend_port)) {
-    Serial.println("Connected to backend");
-  } else {
-    Serial.println("Backend connect failed");
-  }
-}
-
-void setupCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -121,16 +89,68 @@ void setupCamera() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM;
-  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_QQVGA;
-  config.jpeg_quality = 35;
+  config.grab_mode = CAMERA_GRAB_LATEST; //CAMERA_GRAB_WHEN_EMPTY; //
+  
+  config.frame_size = FRAMESIZE_QVGA; //FRAMESIZE_96X96; //FRAMESIZE_QQVGA; //FRAMESIZE_SVGA;
+  config.jpeg_quality = 12;
   config.fb_count = 1;
+  config.fb_location = CAMERA_FB_IN_DRAM;
 
-  esp_camera_init(&config);
+  // camera init
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    Serial.printf("Msg: Camera init failed with error 0x%x", err);
+    return;
+  }
+
+  sensor_t * s = esp_camera_sensor_get();
+  // drop down frame size for higher initial frame rate
+  s->set_framesize(s, FRAMESIZE_QVGA);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+
+  Serial.print("Msg: Camera Ready! Use 'http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("' to connect");
+
+  // Start WebSocket server and assign callback
+  webSocket.begin();
+  webSocket.onEvent(onWebSocketEvent);
+}
+
+void loop() {
+  webSocket.loop();
+
+  static unsigned long lastFrameTime = 0;
+  const int frameInterval = 100;
+
+  if (millis() - lastFrameTime > frameInterval) {
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (fb) {
+      webSocket.broadcastBIN(fb->buf, fb->len);
+      esp_camera_fb_return(fb);
+    }
+    lastFrameTime = millis();
+  }
+
+  if (Serial.available()) {
+    String data = Serial.readStringUntil('\n');
+    data.trim();
+
+    String json = "{\"type\":\"ir\",\"data\":[" + data + "]}";
+    webSocket.broadcastTXT(json);
+  }
 }
