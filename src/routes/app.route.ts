@@ -11,7 +11,7 @@ appRoute.get("/send-otp", controller.sendOtpController);
 appRoute.post("/check-otp", controller.checkOtpController);
 appRoute.get("/get-empty-position", controller.getEmptyPositionController);
 appRoute.get("/get-history", controller.getHistoryController);
-appRoute.get("/checkout", controller.checkoutController);
+appRoute.post("/checkout", controller.checkoutController);
 appRoute.get("/create-ticket-test", controller.createTicketTestController);
 
 export default appRoute;

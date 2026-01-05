@@ -172,7 +172,11 @@ export const checkoutController = async (req: Request, res: Response): Promise<a
         if (!uuid || uuid == "") {
             return res.status(200).json(dataError);
         }
-        const result = await service.checkoutService();
+        const {qrCode} = req.body;
+        if (!qrCode) {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.checkoutService(qrCode);
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);
