@@ -1,6 +1,8 @@
+// 0 - Có vật, 1 - Không có vật
 import dotenv from "dotenv";
 import WebSocket from "ws";
 import { uploadBufferToCloudinary } from "./cloudinary";
+import fs from "fs";
 
 dotenv.config();
 let ws: WebSocket | null = null;
@@ -26,25 +28,27 @@ export const connectToEsp32 = () => {
 
 export const captureImage = (): Promise<any> => {
     return new Promise((resolve, reject) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            return reject(new Error("ESP32 not connected"));
-        }
-
-        const onMessage = async (data: WebSocket.RawData) => {
-            if (!Buffer.isBuffer(data)) {
-                return;
-            }
-
+        if (!ws || ws.readyState !== WebSocket.OPEN) { 
+            return reject(new Error("ESP32 not connected")); 
+        } 
+        const onMessage = async (data: WebSocket.RawData) => { 
             try {
-                ws?.off("message", onMessage);
-
-                // Tải ảnh lên cloudinary
-                const result: any = await uploadBufferToCloudinary(data);
-
-                resolve(result.url);
-            } catch (err) {
-                reject(err);
-            }
+                if (Buffer.isBuffer(data)) { 
+                    const isJpeg = data[0] === 0xff && data[1] === 0xd8; 
+                    const isPng = data[0] === 0x89 && data[1] === 0x50; 
+                    if (isJpeg || isPng) { 
+                        ws?.off("message", onMessage); 
+                        console.log("Received image, length:", data.length); 
+                        fs.writeFileSync("debug.jpg", data); 
+                        const result: any = await uploadBufferToCloudinary(data); 
+                        return resolve(result.url); 
+                    } 
+                }
+                console.log("Non-image data received, ignoring:", data.toString()); 
+            } catch (err) { 
+                ws?.off("message", onMessage); 
+                reject(err); 
+            } 
         };
 
         ws.on("message", onMessage);
