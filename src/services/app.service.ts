@@ -1,3 +1,4 @@
+import axiosOrigin from 'axios';
 import { sendEmail } from "../configs/email";
 import { prisma, ReturnData } from "../configs/interface";
 import { redis } from "../configs/redis";
@@ -11,6 +12,8 @@ import axios from "../configs/axios";
 import FormData from 'form-data';
 import { captureImage, openServo } from "../configs/esp32";
 import { uploadBufferToCloudinary } from "../configs/cloudinary";
+import Jimp from "jimp";
+import QrCode from "qrcode-reader";
 
 export const serviceError: ReturnData = {
     message: "Xảy ra lỗi ở service",
@@ -50,7 +53,9 @@ export const getAllTicketService = async (uuid: string): Promise<ReturnData> => 
 
 export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
     try {
-        const imageResponse = await axios.get(imgUrl, { responseType: 'arraybuffer' });
+        const imageResponse = await axiosOrigin.get<ArrayBuffer>(imgUrl, {
+            responseType: "arraybuffer",
+        });
         const imageBuffer = Buffer.from(imageResponse.data);
         const form = new FormData();
         form.append('file', imageBuffer, { 
@@ -67,14 +72,16 @@ export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
             })
         }
 
-        const response = await axios.post(aiUrl, form, {
+        const response: any = await axios.post("/detect", form, {
             headers: {
                 ...form.getHeaders(),
             },
             timeout: 15000,
         });
+        console.log(response);
 
-        if (!response.data.plates) {
+        if (!response.plates || response.plates.length == 0) {
+            console.log(response);
             return({
                 message: "Không tìm thấy phát hiện được biển số",
                 data: null,
@@ -84,7 +91,7 @@ export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
 
         return({
             message: "Detect Success",
-            data: response.data.plates.plate,
+            data: response.plates[0].plate,
             code: 0
         })
     } catch (e) {
@@ -93,8 +100,16 @@ export const callAIService = async (imgUrl: string): Promise<ReturnData> => {
     }
 };
 
-export const getPlateNumberService = async (): Promise<ReturnData> => {
+export const getPlateNumberService = async (irData: number[]): Promise<ReturnData> => {
     try {
+        const emptyLot = irData.filter((item) => (item == 1));
+        if (emptyLot.length == 0) {
+            return({
+                message: "Bãi xe không còn chỗ trống",
+                data: false,
+                code: 1
+            })
+        }
         const emptyPosition = await prisma.parkingLot.findMany({
             where: {
                 status: 0
@@ -112,6 +127,7 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
         }
 
         const imageResult = await captureImage();
+        // const imageResult = "https://res.cloudinary.com/dspx6kzlb/image/upload/v1767584703/CarLongPlate25_jpg.rf.3e5bb109f9b12aa1f7c51d8a87784643_jjxhzg.jpg"
 
         const detectResult = await callAIService(imageResult);
 
@@ -122,7 +138,7 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
         return({
             data: {
                 imageUrl: imageResult,
-                plateNumber: detectResult
+                plateNumber: detectResult.data
             },
             code: 0,
             message: "Thành công"
@@ -133,8 +149,18 @@ export const getPlateNumberService = async (): Promise<ReturnData> => {
     }
 }
 
-export const createTicketService = async (uuid: string, plateNumber: string, imageIn: string): Promise<ReturnData> => {
+export const createTicketService = async (uuid: string, plateNumber: string, imageIn: string, irData: number[]): Promise<ReturnData> => {
     try {
+        const emptyLot = irData.filter((item) => (item == 1));
+        console.log(emptyLot);
+        if (emptyLot.length == 0) {
+            return({
+                message: "Bãi xe không còn chỗ trống",
+                data: false,
+                code: 1
+            })
+        }
+
         const now = new Date();
         const ticketData = {
             plateNumber: plateNumber,
@@ -153,17 +179,10 @@ export const createTicketService = async (uuid: string, plateNumber: string, ima
 
         const resultUpload: any = await uploadBufferToCloudinary(resultGenerate.data.qrBuffer);
 
-        // Tìm đỡ chỗ trống nếu không có thuật toán tìm kiếm 
-        const emptyPosition = await getEmptyPositionService();
+        const resultFindPath = await getFindPathService(irData, [0, 0]);
 
-        if (emptyPosition.code != 0) {
-            return({
-                message: "Bãi xe không còn chỗ trống",
-                data: false,
-                code: 1
-            })
-        }
-        
+        const parkingLot = resultFindPath.data.targetSlot;
+
         // Người dùng xác nhận đúng biển số xe thì tạo vé giữ xe
         const ticket = await prisma.ticket.create({
             data: {
@@ -172,18 +191,19 @@ export const createTicketService = async (uuid: string, plateNumber: string, ima
                 uuid: uuid,
                 qrCode: resultUpload.url,
                 imageIn: imageIn,
-                parkingLotId: emptyPosition.data[0]
+                parkingLotId: parkingLot
             }
         })
 
         // Gửi request mở servo
         const resultOpen = await openServo();
 
-        // Hiện map chỉ đường
-
         return({
             message: "Thành công",
-            data: ticket,
+            data: {
+                ticket: ticket,
+                resultFindPath: resultFindPath
+            },
             code: 0
         });
     } catch(e) {
@@ -204,7 +224,6 @@ export const sendOtpService = async (): Promise<ReturnData> => {
         }
         const existOtp = await redis.get("otp");
         if (existOtp) {
-            console.log(existOtp);
             const ttl = await redis.ttl("otp");
             const expiry = Date.now() + ttl * 1000;
             return({
@@ -312,14 +331,16 @@ export const getEmptyPositionService = async (): Promise<ReturnData> => {
         return serviceError;
     }
 }
-export const getFindPathService = async (startPosition?: [number, number]): Promise<ReturnData> => {
+export const getFindPathService = async (irData: number[], startPosition?: [number, number]): Promise<ReturnData> => {
     try {
         const parkingStatus = await getParkingStatusFromDB();
 
+        for (let i = 0; i < 5; i++){
+            parkingStatus[i].status = irData[i];
+        }
         const emptySlots = parkingStatus.filter(slot =>
-            slot.status === 0 && slot.sensorId != null
+            slot.status === 1
         );
-
         if (emptySlots.length === 0) {
             return {
                 code: 1,
@@ -401,28 +422,56 @@ export const getHistoryService = async (): Promise<ReturnData> => {
     }
 }
 
-export const checkoutService = async (qrCode: string): Promise<ReturnData> => {
+export const checkoutService = async (id: number): Promise<ReturnData> => {
     try {
+        // Chụp ảnh biển số
         const imageResult = await captureImage();
-        // Giải hình ảnh
+        // const imageResult = "https://res.cloudinary.com/dspx6kzlb/image/upload/v1767584703/CarLongPlate25_jpg.rf.3e5bb109f9b12aa1f7c51d8a87784643_jjxhzg.jpg"
 
-        // Cập nhật db
-        const now = new Date();
-        const dataAfter = await prisma.ticket.updateManyAndReturn({
+        const detectResult = await callAIService(imageResult);
+
+        if (detectResult.code != 0) {
+            return detectResult;
+        }
+
+        const plateNumberOut = detectResult.data;
+        const plateNumberIn = await prisma.ticket.findUnique({
             where: {
-                qrCode: qrCode
+                id: id
+            }, 
+            select: {
+                plateNumber: true
+            }
+        })
+
+        if (plateNumberIn?.plateNumber != plateNumberOut) {
+            console.log("In: ", plateNumberIn);
+            console.log("Out: ", plateNumberOut);
+            return({
+                message: "Khác biển số xe",
+                data: false,
+                code: 1
+            })
+        }
+
+        const resultOpen = await openServo();
+
+        const now = new Date();
+        const ticket = await prisma.ticket.updateManyAndReturn({
+            where: { 
+                id: id 
             },
             data: {
                 timeOut: now,
                 imageOut: imageResult
             }
-        })
-        
-        return({
-            message: "Thành công",
-            data: dataAfter,
-            code: 0
         });
+
+        return {
+            message: "Thành công",
+            data: ticket,
+            code: 0
+        };
     } catch(e) {
         console.log(e);
         return serviceError;
@@ -465,6 +514,9 @@ export const createTicketTestService = async (uuid: string): Promise<ReturnData>
 const getParkingStatusFromDB = async () => {
     try {
         const parkingLots = await prisma.parkingLot.findMany({
+            where: {
+                sensorId: {not: null}
+            },
             select: {
                 id: true,
                 status: true,
@@ -567,3 +619,28 @@ export const generateQrService = async (qrData: any): Promise<ReturnData> => {
         return serviceError;
     }
 }
+
+const findNearestEmptySlot = (
+    parkingStatus: any[],
+    irData: number[],
+    startPosition: [number, number] = [0, 0]
+) => {
+    const emptySlots = parkingStatus.filter(slot => {
+        const sensorIndex = slot.sensorId;
+        if (
+            sensorIndex == null ||
+            sensorIndex < 0 ||
+            sensorIndex >= irData.length
+        ) return false;
+
+        return irData[sensorIndex] === 1;
+    });
+
+    if (emptySlots.length === 0) return null;
+
+    return emptySlots.reduce((nearest, slot) => {
+        const d1 = manhattanDistance(startPosition, slot.position);
+        const d2 = manhattanDistance(startPosition, nearest.position);
+        return d1 < d2 ? slot : nearest;
+    });
+};

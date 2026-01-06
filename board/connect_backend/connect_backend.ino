@@ -6,8 +6,8 @@
 #define CAMERA_MODEL_AI_THINKER // Has PSRAM
 #include "camera_pins.h"
 
-const char* ssid     = "2319RAA4G"; 
-const char* password = "trucha123"; 
+const char* ssid     = "Aaaaa"; 
+const char* password = "64400000"; 
 
 
 // Globals

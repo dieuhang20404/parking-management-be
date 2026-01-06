@@ -75,7 +75,11 @@ export const getAllTicketController = async (req: Request, res: Response): Promi
 
 export const getPlateNumberController = async (req: Request, res: Response): Promise<any> => {
     try {
-        const result = await service.getPlateNumberService();
+        const {irData} = req.body;
+        if (!irData) {
+            return res.status(200).json(dataError);
+        }
+        const result = await service.getPlateNumberService(irData);
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);
@@ -89,11 +93,14 @@ export const createTicketController = async (req: Request, res: Response): Promi
         if (!uuid || uuid == "") {
             return res.status(200).json(dataError);
         }
-        const {plateNumber, imageIn} = req.body;
-        if (!plateNumber || !imageIn) {
+        const {plateNumber, imageIn, irData} = req.body;
+        console.log(plateNumber)
+        console.log(imageIn)
+        console.log(irData)
+        if (!plateNumber || !imageIn || !irData) {
             return res.status(200).json(dataError);
         }
-        const result = await service.createTicketService(uuid, plateNumber, imageIn);
+        const result = await service.createTicketService(uuid, plateNumber, imageIn, irData);
         if (result.code == 0) {
             const io = getSocketIO();
             io.emit("ticket:create", result.data);
@@ -132,14 +139,6 @@ export const checkOtpController = async (req: Request, res: Response): Promise<a
 
 export const getEmptyPositionController = async (req: Request, res: Response): Promise<any> => {
     try {
-        const admin: string = getUuid(req)[1];
-        if (!admin || admin == "") {
-            return res.status(200).json(dataError);
-        }
-        const adminAuth = await redis.get("admin")
-        if (admin != adminAuth) {
-            return res.status(200).json(dataError);
-        }
         const result = await service.getSensorPositionService();
         return res.status(200).json(result);
     } catch(e) {
@@ -172,11 +171,11 @@ export const checkoutController = async (req: Request, res: Response): Promise<a
         if (!uuid || uuid == "") {
             return res.status(200).json(dataError);
         }
-        const {qrCode} = req.body;
-        if (!qrCode) {
+        const {id} = req.body;
+        if (!id) {
             return res.status(200).json(dataError);
         }
-        const result = await service.checkoutService(qrCode);
+        const result = await service.checkoutService(id);
         return res.status(200).json(result);
     } catch(e) {
         console.log(e);
@@ -204,13 +203,13 @@ export const createTicketTestController = async (req: Request, res: Response): P
         return res.status(500).json(controllerError);
     }
 }
+
 export const getFindPathController = async (req: Request, res: Response): Promise<any> => {
     try {
-        const startX = parseInt(req.query.x as string);
-        const startY = parseInt(req.query.y as string);
+        const {irData, x, y} = req.body;
 
-        const startPosition = (!isNaN(startX) && !isNaN(startY))
-            ? [startX, startY] as [number, number]
+        const startPosition = (!isNaN(x) && !isNaN(y))
+            ? [x, y] as [number, number]
             : undefined;
         if (!startPosition) {
             return res.status(200).json({
@@ -220,7 +219,7 @@ export const getFindPathController = async (req: Request, res: Response): Promis
             });
         }
 
-        const result = await service.getFindPathService(startPosition);
+        const result = await service.getFindPathService(irData, startPosition);
 
         return res.status(200).json(result);
     } catch(e) {
